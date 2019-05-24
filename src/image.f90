@@ -6,12 +6,15 @@ program image
   implicit none
 
   ! Declerations
-  integer :: nx, ny, niter, nxloc, nyloc, imagesize(2)
-  integer :: nn, ii, jj, rank, nprocs, comm
-  real(kind=8), allocatable, dimension(:,:) :: newimg, oldimg, edges, localedges
-  character(len=50) :: filename, ch_niter, newfile
-  integer :: root = 0     ! Master process
-  
+  integer                                     :: nx, ny, niter, nxloc, nyloc, imagesize(2)
+  integer                                     :: nn, ii, jj, rank, nprocs, comm
+  logical                                     :: accurate
+  real(kind=8)                                :: old_ave, new_ave
+  real(kind=8), allocatable, dimension(:,:)   :: newimg, oldimg, edges, localedges
+  character(len=50)                           :: filename, ch_niter, newfile
+  integer                                     :: root = 0       ! Master process
+  real(kind=8)                                :: eps =  1.0d-3  ! Degree of precision
+
   ! Initialise message passing
   call mpStart(rank, nprocs, comm)
   
@@ -38,8 +41,6 @@ program image
   !         DECOMPOSITION OF IMAGE        |
   ! --------------------------------------
 
-  !write(*,*) 'Starting to distribute data on rank ', rank
-  ! Decompose and distribute the image
   imagesize(1) = nx;   imagesize(2) = ny
   call DistributeData2D(edges, localedges, rank, comm, imagesize)
 
@@ -58,28 +59,38 @@ program image
   oldimg(:,:) = 255
 
   ! Iterate algorithm to converge
-  do nn=1,niter
+  nn = 1
+  do
 
-    if ((mod(nn,100) .eq. 0).and.(rank.eq.0)) write(*, "('Iteration ', i4)") nn
+    ! Condition for printing which iteration we are on
+    if ((mod(nn,500) .eq. 0).and.(rank.eq.0)) write(*, "('Iteration ', i5)") nn 
 
+    ! Image restoration algorithm
     do jj=1,nyloc
       do ii=1,nxloc
-      
+
         ! Update the image
         newimg(ii,jj) = .25 * (oldimg(ii-1,jj) + oldimg(ii+1,jj) + oldimg(ii,jj-1) &
                         + oldimg(ii,jj+1) - localedges(ii,jj))    
       end do
     end do
 
-    ! Reset oldimg to newimg before next iteration
+    ! Is newimg within specified degree of precision?
+    accurate = within_precision(oldimg(1:nxloc, 1:nyloc), newimg(1:nxloc, 1:nyloc), eps, comm)
+    if (accurate) exit
+
+    ! Otherwise, reset oldimg to newimg before next iteration
     oldimg(1:nxloc, 1:nyloc) = newimg(1:nxloc, 1:nyloc)  
     
     ! Update halos
     call mpSwapHalos(oldimg, comm)
 
-  end do  
+    ! Increment iterable
+    nn = nn + 1
 
-  ! Clean up used data
+  end do
+  
+  ! Algorithm done  - clean up used data
   deallocate(oldimg, localedges)
   
   ! --------------------------------------
@@ -88,7 +99,7 @@ program image
 
   ! Combine all process' data
   call GroupData2D(newimg(1:nxloc, 1:nyloc), edges, rank, comm) 
- 
+   
   ! Finished with newimg now
   deallocate(newimg)
   

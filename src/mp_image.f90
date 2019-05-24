@@ -95,20 +95,6 @@ module mp_image
   end subroutine
  
 
-  function logic2int(logic) result(integ)
-  
-    logical, intent(in) :: logic
-    integer             :: integ
-
-    if(logic) then
-      integ = 1
-    else
-      integ = 0
-    end if
-
-  end function
-
-
   subroutine mpSwapHalos(arr, communicator)
     implicit none
     ! Arguments
@@ -131,22 +117,32 @@ module mp_image
     ! Vector-type variables
     integer                           :: blocklen, stride, count
     integer                           :: vector
+    ! Communicator information
+    integer                           :: nprocs
+
+    ! Communicator information
+    call mpi_comm_size(communicator, nprocs, ierr)
 
     imin = lbound(arr,1);   imax = ubound(arr,1)
     jmin = lbound(arr,2);   jmax = ubound(arr,2)
 
-    ! Horizintal neighbours
-    call mpi_cart_shift(communicator, 0, 1, left, right, ierr)
-    ! Vertical neighbours
-    call mpi_cart_shift(communicator, 1, 1, down, up, ierr)
+    ! If we have been passed a 1D decomposed domain call 1D routine
+    if (is_prime(nprocs)) then
 
-    ! Construct vectors for left and right sends 
-    blocklen = 1
-    stride = size(arr,1)
-    count = size(arr,2) - 2
+      ! Vertical neighbours
+      call mpi_cart_shift(communicator, 0, 1, down, up, ierr)
+      ! Horizontal neighbours
+      left = mpi_proc_null
+      right = mpi_proc_null
 
-    call mpi_type_vector(count, blocklen, stride, dtype, vector, ierr)
-    call mpi_type_commit(vector, ierr)
+    else  ! 2D Decomposition
+    
+      ! Vertical neighbours
+      call mpi_cart_shift(communicator, 1, 1, down, up, ierr)
+      ! Horizintal neighbours
+      call mpi_cart_shift(communicator, 0, 1, left, right, ierr)
+    
+    end if
 
     ! Utilise non-blocking synchronous sends
     ! --------------------------------------
@@ -168,6 +164,14 @@ module mp_image
     call mpi_wait(up_send_request, status, ierr)
     call mpi_wait(down_send_request, status, ierr)
 
+    ! Construct vectors for left and right sends 
+    blocklen = 1
+    stride = size(arr,1)
+    count = size(arr,2) - 2
+
+    call mpi_type_vector(count, blocklen, stride, dtype, vector, ierr)
+    call mpi_type_commit(vector, ierr)
+
     ! Send right
     call mpi_issend(arr(imax-1,jmin+1), 1, vector, right, 0, &
                     communicator, right_send_request, ierr)
@@ -187,6 +191,53 @@ module mp_image
     call mpi_wait(left_send_request, status, ierr)
 
   end subroutine
+
+  function within_precision(old, new, eps, communicator) result(finished)
+
+    ! Arguments
+    real(kind=8), dimension(:,:)          :: old, new      ! Arrays before and after algorithm iteration
+    real(kind=8)                          :: eps           ! Degree of precision
+    integer                               :: communicator  ! Communicator
+    ! Output
+    logical                               :: finished
+
+    ! Other declerations
+    real(kind=8)                          :: old_ave, new_ave
+    logical                               :: check_proc
+    integer                               :: nprocs, ierr
+    logical, allocatable, dimension(:)    :: check_all_procs
+
+    ! Averages
+    old_ave = real(sum(old)) / real(size(old))
+    new_ave = real(sum(new)) / real(size(new))
+
+    ! Within precision on this process?
+    check_proc = abs(old_ave - new_ave) < eps
+
+    call mpi_comm_size(communicator, nprocs, ierr)
+    allocate(check_all_procs(nprocs))
+
+     ! Check other processes also 
+    check_all_procs(:) = .false.
+    call mpi_allgather(check_proc, 1, mpi_logical, check_all_procs, &
+                       1, mpi_logical, communicator, ierr)
+
+    finished = .false.
+    if (all(check_all_procs)) finished = .true.
+    deallocate(check_all_procs)
+
+  end function
+
+
+  function logic2int(logic) result(integ)
+  
+    logical, intent(in) :: logic
+    integer             :: integ
+
+    integ = 0
+    if(logic) integ = 1
+    
+  end function
 
 
   function is_prime(n) result(yn)

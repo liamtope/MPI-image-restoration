@@ -46,7 +46,7 @@ module decomp_2d
     integer                                                 :: globalcoords(2), globaldims(2)
     integer                                                 :: rootsize(2), dummycoords(2), globalsize(2)
     logical                                                 :: globalperiods(2)
-    integer                                                 :: row, col
+    integer                                                 :: row, col, nprocs
     ! Information about/from row/col communicator
     integer                                                 :: rowcomm_id, colcomm_id
     integer                                                 :: rowcomm_size, colcomm_size
@@ -57,7 +57,7 @@ module decomp_2d
     ! Data to be sent/recieved
     real(kind=8),              allocatable, dimension(:,:)  :: dummycolData, dummyrecv, colData
     ! MPI subroutine arguments
-    integer                                                 :: ierr, decompdims = 2
+    integer                                                 :: ierr
     ! Sub-domain size 
     integer                                                 :: nrow, ncol, nx, ny
  
@@ -68,57 +68,65 @@ module decomp_2d
     ! Create communicators for processes in the same cartesian rows/cols
     ! ------------------------------------------------------------------
     call mpi_cart_get(communicator, 2, globaldims, globalperiods, globalcoords, ierr)
+    call mpi_comm_size(communicator, nprocs, ierr)
 
-    row = globalcoords(1);  col = globalcoords(2)
-
-    rcomm_periods(:) = .false.
-    ! 'Same row' communicator
-    call mpi_comm_split(communicator, row, procid, rcomm, ierr)
-    rcomm_dims(:) = globaldims(2)
-    call mpi_cart_create(rcomm, 1, rcomm_dims, rcomm_periods, .false., rowcomm, ierr)
-
-    ccomm_periods(:) = .false.
-    ! 'Same column' communicator
-    call mpi_comm_split(communicator, col, procid, ccomm, ierr)
-    ccomm_dims = globaldims(1)
-    call mpi_cart_create(ccomm, 1, ccomm_dims, ccomm_periods, .false., colcomm, ierr)
-
-    ! ----------------------
-    ! Distributing the data --> 2D Scatter performed with two 1D scatters 
-    ! ----------------------
-    ! First send columns to those in same row as root process
-    if (row.eq.0) then
-
-      call mpi_comm_rank(rowcomm, rowcomm_id, ierr)
-      call DistributeData1D(sourcedata, colData, rowcomm_id, rowcomm, globalsize)
-
-      ! Take the transpose so the next send can be contiguous
-      allocate(dummycolData(size(colData,2), size(colData,1)))
-      dummycolData = transpose(colData)
-      deallocate(colData)
-
-    end if
-
-    globalsize = domainsize
-    ! All processes need to know size of source for next distribution
-    dummycoords(1) = 0;  dummycoords(2) = col
-    call mpSubDomainSize(dummycoords, globaldims, globalsize)
-    
-    globalsize(1) = globalsize(2)
-    globalsize(2) = domainsize(1)
-
-    call mpi_comm_rank(colcomm, colcomm_id, ierr)
-    call DistributeData1D(dummycolData, dummyrecv, colcomm_id, colcomm, globalsize)
+    ! If we have been passed a 1D decomposed domain call 1D routine
+    if (is_prime(nprocs)) then
       
-    if(row.eq.0) deallocate(dummycolData)
-
-    ! Transpose back to normal shape
-    allocate(recvdata(size(dummyrecv,2), size(dummyrecv,1)))
-    recvdata = transpose(dummyrecv)
-      
-    deallocate(dummyrecv)
-
+      call DistributeData1D(sourcedata, recvdata, procid, communicator, domainsize)
     
+    ! 2D Decomposed Data
+    else
+      row = globalcoords(1);  col = globalcoords(2)
+
+      rcomm_periods(:) = .false.
+      ! 'Same row' communicator
+      call mpi_comm_split(communicator, row, procid, rcomm, ierr)
+      rcomm_dims = globaldims(2)
+      call mpi_cart_create(rcomm, 1, rcomm_dims, rcomm_periods, .false., rowcomm, ierr)
+
+      ccomm_periods(:) = .false.
+      ! 'Same column' communicator
+      call mpi_comm_split(communicator, col, procid, ccomm, ierr)
+      ccomm_dims = globaldims(1)
+      call mpi_cart_create(ccomm, 1, ccomm_dims, ccomm_periods, .false., colcomm, ierr)
+
+      ! ----------------------
+      ! Distributing the data --> 2D Scatter performed with two 1D scatters 
+      ! ----------------------
+      ! First send columns to those in same row as root process
+      if (row.eq.0) then
+
+        call mpi_comm_rank(rowcomm, rowcomm_id, ierr)
+        call DistributeData1D(sourcedata, colData, rowcomm_id, rowcomm, globalsize)
+
+        ! Take the transpose so the next send can be contiguous
+        allocate(dummycolData(size(colData,2), size(colData,1)))
+        dummycolData = transpose(colData)
+        deallocate(colData)
+
+      end if
+
+      globalsize = domainsize
+      ! All processes need to know size of source for next distribution
+      dummycoords(1) = 0;  dummycoords(2) = col
+      call mpSubDomainSize(dummycoords, globaldims, globalsize)
+      
+      globalsize(1) = globalsize(2)
+      globalsize(2) = domainsize(1)
+
+      call mpi_comm_rank(colcomm, colcomm_id, ierr)
+      call DistributeData1D(dummycolData, dummyrecv, colcomm_id, colcomm, globalsize)
+        
+      if(row.eq.0) deallocate(dummycolData)
+
+      ! Transpose back to normal shape
+      allocate(recvdata(size(dummyrecv,2), size(dummyrecv,1)))
+      recvdata = transpose(dummyrecv)
+        
+      deallocate(dummyrecv)
+  
+    end if  
   
   end subroutine
 
@@ -147,7 +155,7 @@ module decomp_2d
     ! MPI subroutine args
     integer                                       :: ierr, decompdims = 2
     ! Information about/from global domain
-    integer                                       :: row, col, n, nx, ny
+    integer                                       :: row, col, n, nx, ny, nprocs
     integer                                       :: globalcoords(2), globaldims(2)
     integer                                       :: rootsize(2), dummycoords(2), globalsize(2)
     logical                                       :: globalperiods(2)
@@ -167,9 +175,11 @@ module decomp_2d
     ! Create communicators for processes in the same cartesian rows/cols
     ! ------------------------------------------------------------------
     call mpi_cart_get(communicator, 2, globaldims, globalperiods, globalcoords, ierr)
+    call mpi_comm_size(communicator, nprocs, ierr)
 
-    if (globalcoords(2).lt.0) then 
-      ! 1D Distribution if negative number of columns
+    if (is_prime(nprocs)) then 
+      print*, 'Gathering in 1D'
+      ! 1D Gather of distributed data
       call GroupData1D(procdata, groupdata, procid, communicator)
     else
 

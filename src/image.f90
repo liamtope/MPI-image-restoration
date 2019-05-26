@@ -6,14 +6,15 @@ program image
   implicit none
 
   ! Declerations
-  integer                                     :: nx, ny, niter, nxloc, nyloc, imagesize(2)
+  integer                                     :: nx, ny, nxloc, nyloc, imagesize(2)
   integer                                     :: nn, ii, jj, rank, nprocs, comm
-  logical                                     :: accurate
+  logical                                     :: converged
   real(kind=8)                                :: old_ave, new_ave
   real(kind=8), allocatable, dimension(:,:)   :: newimg, oldimg, edges, localedges
-  character(len=50)                           :: filename, ch_niter, newfile
-  integer                                     :: root = 0       ! Master process
-  real(kind=8)                                :: eps =  1.0d-3  ! Degree of precision
+  character(len=50)                           :: filename, newfile
+  integer                                     :: root = 0             ! Master process
+  real(kind=8)                                :: eps =  1.0d-3        ! Degree of precision
+  real(kind=8)                                :: start, stopp         ! Timing variables
 
   ! Initialise message passing
   call mpStart(rank, nprocs, comm)
@@ -24,10 +25,6 @@ program image
  
   ! File we want to use  (CL arg)
   call getarg(1, filename)
-
-  ! Number of algorithm iterations (CL arg)
-  call getarg(2, ch_niter)
-  read(ch_niter, *) niter
   
   ! Image dimensions
   call pgmsize(trim(filename), nx, ny)
@@ -36,6 +33,8 @@ program image
   allocate(edges(1:nx, 1:ny))
   if (rank.eq.root) call pgmread(trim(filename), edges)
 
+  ! Start timer
+  start = mpi_wtime()
 
   ! --------------------------------------
   !         DECOMPOSITION OF IMAGE        |
@@ -63,7 +62,7 @@ program image
   do
 
     ! Condition for printing which iteration we are on
-    if ((mod(nn,500) .eq. 0).and.(rank.eq.0)) write(*, "('Iteration ', i5)") nn 
+    !if ((mod(nn,500) .eq. 0).and.(rank.eq.0)) write(*, "('Iteration ', i5)") nn 
 
     ! Image restoration algorithm
     do jj=1,nyloc
@@ -76,8 +75,8 @@ program image
     end do
 
     ! Is newimg within specified degree of precision?
-    accurate = within_precision(oldimg(1:nxloc, 1:nyloc), newimg(1:nxloc, 1:nyloc), eps, comm)
-    if (accurate) exit
+    converged = within_precision(oldimg(1:nxloc, 1:nyloc), newimg(1:nxloc, 1:nyloc), eps, comm)
+    if (converged) exit
 
     ! Otherwise, reset oldimg to newimg before next iteration
     oldimg(1:nxloc, 1:nyloc) = newimg(1:nxloc, 1:nyloc)  
@@ -100,6 +99,11 @@ program image
   ! Combine all process' data
   call GroupData2D(newimg(1:nxloc, 1:nyloc), edges, rank, comm) 
    
+  ! Stop timer
+  stopp = mpi_wtime()
+
+  if(rank.eq.root) write(*, "(a20, ',  ', i3, ',  ', f14.9)") trim(filename), nprocs, stopp-start
+
   ! Finished with newimg now
   deallocate(newimg)
   

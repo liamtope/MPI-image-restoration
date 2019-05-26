@@ -178,7 +178,6 @@ module decomp_2d
     call mpi_comm_size(communicator, nprocs, ierr)
 
     if (is_prime(nprocs)) then 
-      print*, 'Gathering in 1D'
       ! 1D Gather of distributed data
       call GroupData1D(procdata, groupdata, procid, communicator)
     else

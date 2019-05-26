@@ -69,7 +69,7 @@ subroutine pgmread(filename, x)
   nx = size(x,1)
   ny = size(x,2)
 
-  write(*,*) 'Reading ', nx, ' x ', ny, ' picture from: ', filename
+  !write(*,*) 'Reading ', nx, ' x ', ny, ' picture from: ', filename
 
   open(unit=iounit, file=filename)
 
@@ -111,7 +111,7 @@ subroutine pgmwrite(filename, x)
   nx = size(x,1)
   ny = size(x,2)
 
-  write(*,*) 'Writing ', nx, ' x ', ny, ' picture into: ', filename
+  !write(*,*) 'Writing ', nx, ' x ', ny, ' picture into: ', filename
 
   open(unit=iounit, file=filename)
 

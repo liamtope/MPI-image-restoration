@@ -195,36 +195,24 @@ module mp_image
   function within_precision(old, new, eps, communicator) result(finished)
 
     ! Arguments
-    real(kind=8), dimension(:,:)          :: old, new      ! Arrays before and after algorithm iteration
-    real(kind=8)                          :: eps           ! Degree of precision
-    integer                               :: communicator  ! Communicator
+    real(kind=8), dimension(:,:)               :: old, new      ! Arrays before and after algorithm iteration
+    real(kind=8)                               :: eps           ! Degree of precision
+    integer                                    :: communicator  ! Communicator
     ! Output
-    logical                               :: finished
+    logical                                    :: finished
 
     ! Other declerations
-    real(kind=8)                          :: old_ave, new_ave
-    logical                               :: check_proc
-    integer                               :: nprocs, ierr
-    logical, allocatable, dimension(:)    :: check_all_procs
+    real(kind=8)                               :: maxdiff, maxdiff_sum
+    integer                                    :: ierr, dtype = mpi_double_precision
 
-    ! Averages
-    old_ave = real(sum(old)) / real(size(old))
-    new_ave = real(sum(new)) / real(size(new))
-
-    ! Within precision on this process?
-    check_proc = abs(old_ave - new_ave) < eps
-
-    call mpi_comm_size(communicator, nprocs, ierr)
-    allocate(check_all_procs(nprocs))
+    ! Maximum difference on this process
+    maxdiff = maxval(old - new)
 
      ! Check other processes also 
-    check_all_procs(:) = .false.
-    call mpi_allgather(check_proc, 1, mpi_logical, check_all_procs, &
-                       1, mpi_logical, communicator, ierr)
+    call mpi_allreduce(maxdiff, maxdiff_sum, 1, dtype, mpi_sum, communicator, ierr)
 
     finished = .false.
-    if (all(check_all_procs)) finished = .true.
-    deallocate(check_all_procs)
+    if (maxdiff_sum .lt. eps)  finished = .true.
 
   end function
 

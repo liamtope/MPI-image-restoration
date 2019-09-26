@@ -13,6 +13,7 @@ input image. The source files are the following:
 
 When running the program, the file name of the input image should be used as a command line argument. No other 
 command line arguments are required.
+
 An example of the code input and ouput is as follows
 
 

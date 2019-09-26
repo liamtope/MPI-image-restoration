@@ -15,4 +15,7 @@ When running the program, the file name of the input image should be used as a c
 command line arguments are required.
 An example of the code input and ouput is as follows
 
+<center>
+ <h3> Input file </h3>
 ![](images/in.png)
+</center>

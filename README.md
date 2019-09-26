@@ -20,4 +20,4 @@ An example of the code input and ouput is as follows
 ![](images/in.png)
 
 ### Output file
-![](out.png)
+![](images/out.png)

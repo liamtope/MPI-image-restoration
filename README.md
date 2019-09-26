@@ -11,3 +11,5 @@ input image. The source files are the following:
   *  ```decomp_2d.f90```: Module containing subroutines for 2D domain decomposition
   *  ```pgmio.f90```: Module containing subroutines for handling ```.pgm``` file I/O (provided by EPCC)
 
+When running the program, the file name of the input image should be used as a command line argument. No other 
+command line arguments are required.
